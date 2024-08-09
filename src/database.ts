@@ -832,6 +832,11 @@ class Database extends common.GrpcServiceObject {
       });
     });
   }
+
+  async createMultiplexedSession(): Promise<CreateSessionResponse> {
+    return await this.createSession({});
+  }
+
   /**
    * Create a new session.
    *
@@ -2925,51 +2930,95 @@ class Database extends common.GrpcServiceObject {
   ): PartialResultStream {
     const proxyStream: Transform = through.obj();
 
-    this.pool_.getSession((err, session) => {
-      if (err) {
-        proxyStream.destroy(err);
-        return;
-      }
 
-      const snapshot = session!.snapshot(options, this.queryOptions_);
+    if (this._getSpanner().isMultiplexedSessionEnabled) {
 
-      this._releaseOnEnd(session!, snapshot);
-
-      let dataReceived = false;
-      let dataStream = snapshot.runStream(query);
-      const endListener = () => snapshot.end();
-      dataStream
-        .once('data', () => (dataReceived = true))
-        .once('error', err => {
-          if (
-            !dataReceived &&
-            isSessionNotFoundError(err as grpc.ServiceError)
-          ) {
-            // If it is a 'Session not found' error and we have not yet received
-            // any data, we can safely retry the query on a new session.
-            // Register the error on the session so the pool can discard it.
-            if (session) {
-              session.lastError = err as grpc.ServiceError;
+      this.pool_.getMultiplexedSession((err, session) => {
+        console.log("SESSION: ", session?.formattedName_);
+        if (err) {
+          proxyStream.destroy(err);
+          return;
+        }
+        const snapshot = session!.snapshot(options, this.queryOptions_);
+        let dataReceived = false;
+        let dataStream = snapshot.runStream(query);
+        const endListener = () => snapshot.end();
+        dataStream
+          .once('data', () => (dataReceived = true))
+          .once('error', err => {
+            if (
+              !dataReceived &&
+              isSessionNotFoundError(err as grpc.ServiceError)
+            ) {
+              if (session) {
+                session.lastError = err as grpc.ServiceError;
+              }
+              dataStream.unpipe(proxyStream);
+              dataStream.removeListener('end', endListener);
+              dataStream.end();
+              snapshot.end();
+              dataStream = this.runStream(query, options);
+              dataStream.pipe(proxyStream);
+            } else {
+              proxyStream.destroy(err);
+              snapshot.end();
             }
-            // Remove the current data stream from the end user stream.
-            dataStream.unpipe(proxyStream);
-            dataStream.removeListener('end', endListener);
-            dataStream.end();
-            snapshot.end();
-            // Create a new data stream and add it to the end user stream.
-            dataStream = this.runStream(query, options);
-            dataStream.pipe(proxyStream);
-          } else {
-            proxyStream.destroy(err);
-            snapshot.end();
-          }
-        })
-        .on('stats', stats => proxyStream.emit('stats', stats))
-        .on('response', response => proxyStream.emit('response', response))
-        .once('end', endListener)
-        .pipe(proxyStream);
-    });
+          })
+          .on('stats', stats => proxyStream.emit('stats', stats))
+          .on('response', response => proxyStream.emit('response', response))
+          .once('end', endListener)
+          .pipe(proxyStream);
+        // console.log("ERROR: ", err);
+        // console.log("SESSION: ", session?.formattedName_);
+      });
 
+    } else {
+      this.pool_.getSession((err, session) => {
+        console.log("SESSION: ", session?.formattedName_);
+        if (err) {
+          proxyStream.destroy(err);
+          return;
+        }
+  
+        const snapshot = session!.snapshot(options, this.queryOptions_);
+  
+        this._releaseOnEnd(session!, snapshot);
+  
+        let dataReceived = false;
+        let dataStream = snapshot.runStream(query);
+        const endListener = () => snapshot.end();
+        dataStream
+          .once('data', () => (dataReceived = true))
+          .once('error', err => {
+            if (
+              !dataReceived &&
+              isSessionNotFoundError(err as grpc.ServiceError)
+            ) {
+              // If it is a 'Session not found' error and we have not yet received
+              // any data, we can safely retry the query on a new session.
+              // Register the error on the session so the pool can discard it.
+              if (session) {
+                session.lastError = err as grpc.ServiceError;
+              }
+              // Remove the current data stream from the end user stream.
+              dataStream.unpipe(proxyStream);
+              dataStream.removeListener('end', endListener);
+              dataStream.end();
+              snapshot.end();
+              // Create a new data stream and add it to the end user stream.
+              dataStream = this.runStream(query, options);
+              dataStream.pipe(proxyStream);
+            } else {
+              proxyStream.destroy(err);
+              snapshot.end();
+            }
+          })
+          .on('stats', stats => proxyStream.emit('stats', stats))
+          .on('response', response => proxyStream.emit('response', response))
+          .once('end', endListener)
+          .pipe(proxyStream);
+      });
+    }
     return proxyStream as PartialResultStream;
   }
 
@@ -3743,6 +3792,7 @@ class Database extends common.GrpcServiceObject {
 promisifyAll(Database, {
   exclude: [
     'batchTransaction',
+    'createMultiplexedSession',
     'batchWriteAtLeastOnce',
     'getRestoreInfo',
     'getState',
