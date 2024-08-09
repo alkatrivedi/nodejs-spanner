@@ -2949,7 +2949,8 @@ class Database extends common.GrpcServiceObject {
 
 
     if (this._getSpanner().isMultiplexedSessionEnabled) {
-      this.multiplexedSession_?.getMultiplexedSession((err, session) => {
+
+      this.pool_.getMultiplexedSession((err, session) => {
         console.log("SESSION: ", session?.formattedName_);
         if (err) {
           proxyStream.destroy(err);
