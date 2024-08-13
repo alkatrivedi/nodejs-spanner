@@ -102,6 +102,7 @@ import Policy = google.iam.v1.Policy;
 import FieldMask = google.protobuf.FieldMask;
 import IDatabase = google.spanner.admin.database.v1.IDatabase;
 import snakeCase = require('lodash.snakecase');
+import { MultiplexedSession, MultiplexedSessionInterface, MultiplexedSessionOptions } from './multiplexed-session';
 
 export type GetDatabaseRolesCallback = RequestCallback<
   IDatabaseRole,
@@ -136,6 +137,12 @@ export interface SessionPoolConstructor {
     database: Database,
     options?: SessionPoolOptions | null
   ): SessionPoolInterface;
+}
+
+export interface MultiplexedSessionConstructor {
+  new (
+    database: Database,
+  ): MultiplexedSessionInterface;
 }
 
 export type GetDatabaseDialectCallback = NormalCallback<
@@ -329,6 +336,7 @@ class Database extends common.GrpcServiceObject {
   private instance: Instance;
   formattedName_: string;
   pool_: SessionPoolInterface;
+  multiplexedSession_?: MultiplexedSessionInterface;
   queryOptions_?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions;
   resourceHeader_: {[k: string]: string};
   request: DatabaseRequest;
@@ -340,7 +348,8 @@ class Database extends common.GrpcServiceObject {
     instance: Instance,
     name: string,
     poolOptions?: SessionPoolConstructor | SessionPoolOptions,
-    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions
+    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions,
+    multiplexedSessionOptions?: MultiplexedSessionOptions | MultiplexedSessionConstructor,
   ) {
     const methods = {
       /**
@@ -400,6 +409,7 @@ class Database extends common.GrpcServiceObject {
         callback: CreateDatabaseCallback
       ) => {
         const pool = this.pool_ as SessionPool;
+        const multiplexedSession = this.multiplexedSession_ as MultiplexedSession;
         if (pool._pending > 0) {
           // If there are BatchCreateSessions requests pending, then we should
           // wait until these have finished before we try to create the database.
@@ -441,6 +451,12 @@ class Database extends common.GrpcServiceObject {
       typeof poolOptions === 'function'
         ? new (poolOptions as SessionPoolConstructor)(this, null)
         : new SessionPool(this, poolOptions);
+
+    this.multiplexedSession_ = 
+      typeof multiplexedSessionOptions === 'function'
+      ? new (multiplexedSessionOptions as MultiplexedSessionConstructor)(this)
+      : new MultiplexedSession(this, multiplexedSessionOptions);
+    
     if (typeof poolOptions === 'object') {
       this.databaseRole = poolOptions.databaseRole || null;
     }
@@ -452,6 +468,7 @@ class Database extends common.GrpcServiceObject {
     this.request = instance.request;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.requestStream = instance.requestStream as any;
+    // this.multiplexedSession_.getMultiplexedSession(()=>{});
     this.pool_.on('error', this.emit.bind(this, 'error'));
     this.pool_.open();
     this.queryOptions_ = Object.assign(
@@ -2932,8 +2949,7 @@ class Database extends common.GrpcServiceObject {
 
 
     if (this._getSpanner().isMultiplexedSessionEnabled) {
-
-      this.pool_.getMultiplexedSession((err, session) => {
+      this.multiplexedSession_?.getMultiplexedSession((err, session) => {
         console.log("SESSION: ", session?.formattedName_);
         if (err) {
           proxyStream.destroy(err);
