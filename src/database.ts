@@ -469,6 +469,7 @@ class Database extends common.GrpcServiceObject {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.requestStream = instance.requestStream as any;
     // this.multiplexedSession_.getMultiplexedSession(()=>{});
+    this.multiplexedSession_.createMultiplexedSession();
     this.pool_.on('error', this.emit.bind(this, 'error'));
     this.pool_.open();
     this.queryOptions_ = Object.assign(
@@ -2950,7 +2951,7 @@ class Database extends common.GrpcServiceObject {
 
     if (this._getSpanner().isMultiplexedSessionEnabled) {
 
-      this.pool_.getMultiplexedSession((err, session) => {
+      this.multiplexedSession_?.getMultiplexedSession((err, session) => {
         console.log("SESSION: ", session?.formattedName_);
         if (err) {
           proxyStream.destroy(err);

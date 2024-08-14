@@ -15,6 +15,7 @@ export interface GetSessionCallback {
 }
 
 export interface MultiplexedSessionInterface {
+    createMultiplexedSession(): Promise<void>;
     getMultiplexedSession(callback: GetSessionCallback): void;
 }
 
@@ -34,6 +35,7 @@ export class MultiplexedSession {
     database: Database;
     multiplexedSessionOptions: MultiplexedSessionOptions;
     _multiplexedInventory!: MultiplexedSessionInventory;
+    _pingHandle!: NodeJS.Timer;
     constructor(database: Database, multiplexedSessionOptions?: MultiplexedSessionOptions) {
         this.database = database;
         this.multiplexedSessionOptions = Object.assign({}, MULTIPLEXEDSESSIONDEFAULTS, multiplexedSessionOptions);
@@ -44,49 +46,42 @@ export class MultiplexedSession {
 
     /*New
     **/
-    // async createMultiplexedSession(): Promise<void> {
-    //     this._startHouseKeeping();
-    //     await this._createMultiplexedSessions();
-    // }
+    async createMultiplexedSession(): Promise<void> {
+        this._startHouseKeeping();
+        await this._createMultiplexedSessions();
+    }
 
-    // _startHouseKeeping(): void {
-    //     const evictRate = this.multiplexedSessionOptions.idlesAfter! * 60000;
-
-    //     this._evictHandle = setInterval(() => this._evictIdleSessions(), evictRate);
-    //     this._evictHandle.unref();
-
-    //     const pingRate = this.options.keepAlive! * 60000;
-
-    //     this._pingHandle = setInterval(() => this._pingIdleSessions(), pingRate);
-    //     this._pingHandle.unref();
-    // }
+    _startHouseKeeping(): void {
+        const pingRate = this.multiplexedSessionOptions.keepAlive! * 60000;
+        this._pingHandle = setInterval(() => this._pingMultiplexedSession(), pingRate);
+        this._pingHandle.unref();
+    }
 
     /**
-   * Deletes idle sessions that exceed the maxIdle configuration.
-   *
-   * @private
-   */
-//   _evictIdleSessions(): void {
-//     const {maxIdle, min} = this.options;
-//     const size = this.size;
-//     const idle = this._getIdleSessions();
+     * Makes a keep alive request to all the idle sessions.
+     *
+     * @private
+     *
+     * @returns {Promise}
+     */
+    async _pingMultiplexedSession(): Promise<void> {
+        this.getMultiplexedSession(async (err, session)=>{
+            await this._ping(session!);
+        });
+        await this.createMultiplexedSession();
+    }
 
-//     let count = idle.length;
-//     let evicted = 0;
-
-//     while (count-- > maxIdle! && size - evicted++ > min!) {
-//       const session = idle.pop();
-
-//       if (!session) {
-//         continue;
-//       }
-
-//       const index = this._inventory.sessions.indexOf(session);
-
-//       this._inventory.sessions.splice(index, 1);
-//       this._destroy(session);
-//     }
-//   }
+    /**
+     * Pings an individual session.
+     *
+     * @private
+     *
+     * @param {Session} session The session to ping.
+     * @returns {Promise}
+     */
+    async _ping(session: Session): Promise<void> {
+        await session.keepAlive();
+    }
 
     /**
      * Retrieve a multiplexed session.
@@ -95,8 +90,7 @@ export class MultiplexedSession {
     */
     getMultiplexedSession(callback: GetSessionCallback): void {
         this._acquireMultiplexedSession().then(
-        session => callback(null, session, session.txn!),
-        callback
+            session => callback(null, session, session.txn!),
         );
     }
 
@@ -123,13 +117,16 @@ export class MultiplexedSession {
     }
 
     async _createMultiplexedSessions(): Promise<void> {
-        // const session: Session = await this.database.createMultiplexedSession();
-        // this._multiplexedInventory.multiplexedSession.push(session);
-        const createSessionResponse = await this.database.createMultiplexedSession();
-    
-        // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
-        const session = createSessionResponse as unknown as Session;
-        this._multiplexedInventory.multiplexedSession.add(session);
+        if (!this._hasMultiplexedSessionUsableFor()) {
+            // const session: Session = await this.database.createMultiplexedSession();
+            // this._multiplexedInventory.multiplexedSession.push(session);
+            const createSessionResponse = await this.database.createMultiplexedSession();
+        
+            // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
+            const session = createSessionResponse as unknown as Session;
+            this._multiplexedInventory.multiplexedSession.add(session);
+        }
+        return ;
     }
 
     _hasMultiplexedSessionUsableFor(): boolean {
