@@ -120,11 +120,14 @@ export class MultiplexedSession {
         if (!this._hasMultiplexedSessionUsableFor()) {
             // const session: Session = await this.database.createMultiplexedSession();
             // this._multiplexedInventory.multiplexedSession.push(session);
-            const createSessionResponse = await this.database.createMultiplexedSession();
+            const createSessionResponse = await this.database.createMultiplexedSession({});
         
-            // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
-            const session = createSessionResponse as unknown as Session;
-            this._multiplexedInventory.multiplexedSession.add(session);
+            // // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
+            // const session = createSessionResponse as unknown as Session;
+            this._multiplexedInventory.multiplexedSession.add(createSessionResponse[0]);
+            // this.database.createMultiplexedSession((err, resp, apiResponse) => {
+            //     this._multiplexedInventory.multiplexedSession.add(resp!.id as unknown as Session);
+            // });
         }
         return ;
     }
@@ -137,8 +140,11 @@ export class MultiplexedSession {
         if (this._hasMultiplexedSessionUsableFor()) {
           return this._borrowAvailableMultiplexedSession();
         }
-        // const session = await this.database.createMultiplexedSession();
-        const createSessionResponse = await this.database.createMultiplexedSession();
+        // const session = await this.database.createMultiplexedSession({});
+        const createSessionResponse = await this.database.createMultiplexedSession({});
+        // this.database.createMultiplexedSession((err, resp, apiResponse) => {
+        //     this._multiplexedInventory.multiplexedSession.add(resp!.id as unknown as Session);
+        // });
         // const session = createSessionResponse as unknown as Session;
         this._multiplexedInventory.multiplexedSession.add(createSessionResponse[0]);
         return this._borrowAvailableMultiplexedSession();

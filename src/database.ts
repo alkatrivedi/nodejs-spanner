@@ -851,8 +851,60 @@ class Database extends common.GrpcServiceObject {
     });
   }
 
-  async createMultiplexedSession(): Promise<CreateSessionResponse> {
-    return await this.createSession({});
+  createMultiplexedSession(options: CreateSessionOptions): Promise<CreateSessionResponse>;
+  createMultiplexedSession(callback: CreateSessionCallback): void;
+  createMultiplexedSession(
+    options: CreateSessionOptions,
+    callback: CreateSessionCallback
+  ): void;
+  createMultiplexedSession(
+    optionsOrCallback: CreateSessionOptions | CreateSessionCallback,
+    cb?: CreateSessionCallback
+  ): void | Promise<CreateSessionResponse> {
+    const callback =
+      typeof optionsOrCallback === 'function' ? optionsOrCallback : cb!;
+    const options =
+      typeof optionsOrCallback === 'object' && optionsOrCallback
+        ? extend({}, optionsOrCallback)
+        : ({} as CreateSessionOptions);
+
+    const reqOpts: google.spanner.v1.ICreateSessionRequest = {
+      database: this.formattedName_,
+    };
+
+    reqOpts.session = {};
+
+    if (options.labels) {
+      reqOpts.session.labels = options.labels;
+    }
+
+    reqOpts.session.creatorRole =
+      options.databaseRole || this.databaseRole || null;
+
+    reqOpts.session.multiplexed = true;
+
+    const headers = this.resourceHeader_;
+    if (this._getSpanner().routeToLeaderEnabled) {
+      addLeaderAwareRoutingHeader(headers);
+    }
+
+    this.request<google.spanner.v1.ISession>(
+      {
+        client: 'SpannerClient',
+        method: 'createSession',
+        reqOpts,
+        headers: headers,
+      },
+      (err, resp) => {
+        if (err) {
+          callback(err, null, resp!);
+          return;
+        }
+        const session = this.session(resp!.name!);
+        session.metadata = resp;
+        callback(null, session, resp!);
+      }
+    );
   }
 
   /**
@@ -3810,7 +3862,6 @@ class Database extends common.GrpcServiceObject {
 promisifyAll(Database, {
   exclude: [
     'batchTransaction',
-    'createMultiplexedSession',
     'batchWriteAtLeastOnce',
     'getRestoreInfo',
     'getState',
@@ -3838,6 +3889,7 @@ callbackifyAll(Database, {
     'close',
     'createBatchTransaction',
     'createSession',
+    'createMultiplexedSession',
     'createTable',
     'delete',
     'exists',

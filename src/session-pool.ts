@@ -114,7 +114,6 @@ export interface SessionPoolInterface extends EventEmitter {
   close(callback: SessionPoolCloseCallback): void;
   open(): void;
   getSession(callback: GetSessionCallback): void;
-  getMultiplexedSession(callback: GetSessionCallback): void;
   getReadSession(callback: GetReadSessionCallback): void;
   getWriteSession(callback: GetWriteSessionCallback): void;
   release(session: Session): void;
@@ -324,10 +323,6 @@ interface SessionInventory {
   borrowed: Set<Session>;
 }
 
-interface MultiplexedSessionInventory {
-  multiplexedSession: Set<Session>;
-}
-
 /** @deprecated. */
 export interface CreateSessionsOptions {
   writes?: number;
@@ -356,7 +351,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
   _pingHandle!: NodeJS.Timer;
   _requests: PQueue;
   _traces: Map<string, trace.StackFrame[]>;
-  _multiplexedInventory!: MultiplexedSessionInventory;
 
   /**
    * Formats stack trace objects into Node-like stack trace.
@@ -479,10 +473,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
       sessions: [],
       borrowed: new Set(),
     };
-
-    this._multiplexedInventory = {
-      multiplexedSession: new Set(),
-    };
     this._waiters = 0;
     this._requests = new PQueue({
       concurrency: this.options.concurrency!,
@@ -558,18 +548,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
    */
   getSession(callback: GetSessionCallback): void {
     this._acquire().then(
-      session => callback(null, session, session.txn!),
-      callback
-    );
-  }
-
-  /**
-   * Retrieve a multiplexed session.
-   *
-   * @param {GetSessionCallback} callback The callback function.
-   */
-  getMultiplexedSession(callback: GetSessionCallback): void {
-    this._acquireMultiplexedSession().then(
       session => callback(null, session, session.txn!),
       callback
     );
@@ -685,11 +663,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
     return session;
   }
 
-  async _acquireMultiplexedSession(): Promise<Session> {
-    const session = await this._getMultiplexedSession();
-    return session;
-  }
-
   /**
    * Moves a session into the borrowed group.
    *
@@ -702,13 +675,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
 
     this._inventory.borrowed.add(session);
     this._inventory.sessions.splice(index, 1);
-  }
-
-  _borrowMultiplexedSession(multiplexedSession: Session): void {
-    // const length = this._multiplexedInventory.multiplexedSession.size;
-    // const session = this._multiplexedInventory.multiplexedSession[0];
-    this._multiplexedInventory.multiplexedSession.add(multiplexedSession);
-    // return session;
   }
 
   /**
@@ -724,12 +690,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
     return session;
   }
 
-  _borrowFromMultiplexed(): Session {
-    // const session = this._multiplexedInventory.multiplexedSession[0];
-    const [session] = [...this._multiplexedInventory.multiplexedSession];
-    return session;
-  }
-
   /**
    * Grabs the next available session.
    *
@@ -739,10 +699,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
    */
   _borrowNextAvailableSession(): Session {
     return this._borrowFrom();
-  }
-
-  _borrowAvailableMultiplexedSession(): Session {
-    return this._borrowFromMultiplexed();
   }
 
   /**
@@ -801,16 +757,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
         });
       });
     }
-  }
-
-  async _createMultiplexedSessions(): Promise<void> {
-    // const session: Session = await this.database.createMultiplexedSession();
-    // this._multiplexedInventory.multiplexedSession.push(session);
-    const createSessionResponse = await this.database.createMultiplexedSession();
-
-    // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
-    const session = createSessionResponse as unknown as Session;
-    this._multiplexedInventory.multiplexedSession.add(session);
   }
 
   /**
@@ -907,21 +853,6 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
    */
   _hasSessionUsableFor(): boolean {
     return this._inventory.sessions.length > 0;
-  }
-
-  _hasMultiplexedSessionUsableFor(): boolean {
-    return this._multiplexedInventory.multiplexedSession.size > 0;
-  }
-
-  async _getMultiplexedSession(): Promise<Session> {
-    if (this._hasMultiplexedSessionUsableFor()) {
-      return this._borrowAvailableMultiplexedSession();
-    }
-    // const session = await this.database.createMultiplexedSession();
-    const createSessionResponse = await this.database.createMultiplexedSession();
-    // const session = createSessionResponse as unknown as Session;
-    this._multiplexedInventory.multiplexedSession.add(createSessionResponse[0]);
-    return this._borrowAvailableMultiplexedSession();
   }
 
   /**
