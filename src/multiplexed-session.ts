@@ -3,7 +3,7 @@ import {Session} from './session';
 import {Transaction} from './transaction';
 
 interface MultiplexedSessionInventory {
-    multiplexedSession: Set<Session>;
+    multiplexedSession: Session | null;
 }
 
 export interface GetSessionCallback {
@@ -40,7 +40,7 @@ export class MultiplexedSession {
         this.database = database;
         this.multiplexedSessionOptions = Object.assign({}, MULTIPLEXEDSESSIONDEFAULTS, multiplexedSessionOptions);
         this._multiplexedInventory = {
-            multiplexedSession: new Set(),
+            multiplexedSession: null,
         };
     }
 
@@ -90,63 +90,42 @@ export class MultiplexedSession {
     */
     getMultiplexedSession(callback: GetSessionCallback): void {
         this._acquireMultiplexedSession().then(
-            session => callback(null, session, session.txn!),
+            session => callback(null, session, session?.txn!),
         );
     }
 
-    async _acquireMultiplexedSession(): Promise<Session> {
+    async _acquireMultiplexedSession(): Promise<Session|null> {
         const session = await this._getMultiplexedSession();
         return session;
+        
     }
 
     _borrowMultiplexedSession(multiplexedSession: Session): void {
-        // const length = this._multiplexedInventory.multiplexedSession.size;
-        // const session = this._multiplexedInventory.multiplexedSession[0];
-        this._multiplexedInventory.multiplexedSession.add(multiplexedSession);
-        // return session;
+        this._multiplexedInventory.multiplexedSession = multiplexedSession;
     }
 
-    _borrowFromMultiplexed(): Session {
-        // const session = this._multiplexedInventory.multiplexedSession[0];
-        const [session] = [...this._multiplexedInventory.multiplexedSession];
-        return session;
+    _borrowFromMultiplexed(): Session | null {
+        return this._multiplexedInventory.multiplexedSession;
     }
 
-    _borrowAvailableMultiplexedSession(): Session {
+    _borrowAvailableMultiplexedSession(): Session | null {
         return this._borrowFromMultiplexed();
     }
 
     async _createMultiplexedSessions(): Promise<void> {
-        if (!this._hasMultiplexedSessionUsableFor()) {
-            // const session: Session = await this.database.createMultiplexedSession();
-            // this._multiplexedInventory.multiplexedSession.push(session);
-            const createSessionResponse = await this.database.createMultiplexedSession({});
-        
-            // // If CreateSessionResponse is actually a Session or contains a Session, you can cast it
-            // const session = createSessionResponse as unknown as Session;
-            this._multiplexedInventory.multiplexedSession.add(createSessionResponse[0]);
-            // this.database.createMultiplexedSession((err, resp, apiResponse) => {
-            //     this._multiplexedInventory.multiplexedSession.add(resp!.id as unknown as Session);
-            // });
-        }
-        return ;
+        const createSessionResponse = await this.database.createMultiplexedSession({});
+        this._multiplexedInventory.multiplexedSession = createSessionResponse[0];
     }
 
     _hasMultiplexedSessionUsableFor(): boolean {
-        return this._multiplexedInventory.multiplexedSession.size > 0;
+        return this._multiplexedInventory.multiplexedSession!=null;
     }
 
-    async _getMultiplexedSession(): Promise<Session> {
+    async _getMultiplexedSession(): Promise<Session|null> {
         if (this._hasMultiplexedSessionUsableFor()) {
           return this._borrowAvailableMultiplexedSession();
         }
-        // const session = await this.database.createMultiplexedSession({});
-        const createSessionResponse = await this.database.createMultiplexedSession({});
-        // this.database.createMultiplexedSession((err, resp, apiResponse) => {
-        //     this._multiplexedInventory.multiplexedSession.add(resp!.id as unknown as Session);
-        // });
-        // const session = createSessionResponse as unknown as Session;
-        this._multiplexedInventory.multiplexedSession.add(createSessionResponse[0]);
+        await this._createMultiplexedSessions();
         return this._borrowAvailableMultiplexedSession();
     }
 }

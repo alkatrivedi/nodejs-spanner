@@ -3000,7 +3000,6 @@ class Database extends common.GrpcServiceObject {
   ): PartialResultStream {
     const proxyStream: Transform = through.obj();
 
-
     if (this._getSpanner().isMultiplexedSessionEnabled) {
 
       this.multiplexedSession_?.getMultiplexedSession((err, session) => {

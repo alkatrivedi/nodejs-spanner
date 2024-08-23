@@ -24,6 +24,7 @@ async function main(
   
     // Function to execute queries concurrently
     async function runQueriesConcurrently() {
+        // await database.run('SELECT 1');
         const promises = queries.map(async query => {
             const [rows] = await database.run(query);
             console.log(`Query: ${query.sql} returned ${rows.length} rows.`);
