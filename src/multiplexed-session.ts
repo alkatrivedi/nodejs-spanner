@@ -35,6 +35,7 @@ export class MultiplexedSession {
     database: Database;
     multiplexedSessionOptions: MultiplexedSessionOptions;
     _multiplexedInventory!: MultiplexedSessionInventory;
+    _multiplexedSessionLock: Promise<void> | null;
     _pingHandle!: NodeJS.Timer;
     constructor(database: Database, multiplexedSessionOptions?: MultiplexedSessionOptions) {
         this.database = database;
@@ -42,6 +43,7 @@ export class MultiplexedSession {
         this._multiplexedInventory = {
             multiplexedSession: null,
         };
+        this._multiplexedSessionLock = null;
     }
 
     /*New
@@ -113,8 +115,17 @@ export class MultiplexedSession {
     }
 
     async _createMultiplexedSessions(): Promise<void> {
-        const createSessionResponse = await this.database.createMultiplexedSession({});
-        this._multiplexedInventory.multiplexedSession = createSessionResponse[0];
+        if (this._multiplexedSessionLock) {
+            await this._multiplexedSessionLock;
+            return;
+        }
+        this._multiplexedSessionLock = new Promise(async (resolve) => {
+            const createSessionResponse = await this.database.createMultiplexedSession({});
+            this._multiplexedInventory.multiplexedSession = createSessionResponse[0];
+            resolve();
+        });
+        await this._multiplexedSessionLock;
+        this._multiplexedSessionLock = null;
     }
 
     _hasMultiplexedSessionUsableFor(): boolean {

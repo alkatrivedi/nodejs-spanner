@@ -138,7 +138,6 @@ export interface SpannerOptions extends GrpcClientOptions {
   sslCreds?: grpc.ChannelCredentials;
   routeToLeaderEnabled?: boolean;
   directedReadOptions?: google.spanner.v1.IDirectedReadOptions | null;
-  isMultiplexedSessionEnabled?: boolean;
 }
 export interface RequestConfig {
   client: string;
@@ -240,7 +239,6 @@ class Spanner extends GrpcService {
   resourceHeader_: {[k: string]: string};
   routeToLeaderEnabled = true;
   directedReadOptions: google.spanner.v1.IDirectedReadOptions | null;
-  isMultiplexedSessionEnabled = false;
 
   /**
    * Placeholder used to auto populate a column with the commit timestamp.
@@ -354,10 +352,6 @@ class Spanner extends GrpcService {
 
     if (options.routeToLeaderEnabled === false) {
       this.routeToLeaderEnabled = false;
-    }
-
-    if(options.isMultiplexedSessionEnabled === true) {
-      this.isMultiplexedSessionEnabled = true;
     }
 
     this.options = options;
