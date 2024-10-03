@@ -54,6 +54,9 @@
     "coverage": "c8 mocha build/test build/test/common && c8 report --check-coverage"
   },
   "dependencies": {
+    "@google-cloud/opentelemetry-cloud-trace-exporter": "^2.4.1",
+    "@opentelemetry/resources": "^1.26.0",
+    "@opentelemetry/sdk-node": "^0.53.0",
     "@google-cloud/common": "^5.0.0",
     "@google-cloud/precise-date": "^4.0.0",
     "@google-cloud/projectify": "^4.0.0",
