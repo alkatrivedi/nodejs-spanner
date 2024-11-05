@@ -1968,6 +1968,15 @@ export {InstanceConfig};
 export {Database};
 
 /**
+ * {@link GetSession} class.
+ *
+ * @name Spanner.GetSession
+ * @see GetSession
+ * @type {Constructor}
+ */
+export {GetSession};
+
+/**
  * {@link Backup} class.
  *
  * @name Spanner.Backup
@@ -2059,6 +2068,7 @@ export {MutationSet};
  */
 import * as protos from '../protos/protos';
 import IInstanceConfig = instanceAdmin.spanner.admin.instance.v1.IInstanceConfig;
+import { GetSession } from './get-session';
 export {v1, protos};
 export default {Spanner};
 export {Float32, Float, Int, Struct, Numeric, PGNumeric, SpannerDate};
