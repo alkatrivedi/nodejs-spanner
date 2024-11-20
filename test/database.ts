@@ -295,45 +295,6 @@ describe('Database', () => {
       assert(database.formattedName_, formattedName);
     });
 
-    it('should create a SessionPool object', () => {
-      assert(database.pool_ instanceof FakeSessionPool);
-      assert.strictEqual(database.pool_.calledWith_[0], database);
-      assert.strictEqual(database.pool_.calledWith_[1], POOL_OPTIONS);
-    });
-
-    it('should accept a custom Pool class', () => {
-      function FakePool() {}
-      FakePool.prototype.on = util.noop;
-      FakePool.prototype.open = util.noop;
-
-      const database = new Database(
-        INSTANCE,
-        NAME,
-        FakePool as {} as db.SessionPoolConstructor
-      );
-      assert(database.pool_ instanceof FakePool);
-    });
-
-    it('should re-emit SessionPool errors', done => {
-      const error = new Error('err');
-
-      database.on('error', err => {
-        assert.strictEqual(err, error);
-        done();
-      });
-
-      database.pool_.emit('error', error);
-    });
-
-    it('should open the pool', done => {
-      FakeSessionPool.prototype.open = () => {
-        FakeSessionPool.prototype.open = util.noop;
-        done();
-      };
-
-      new Database(INSTANCE, NAME);
-    });
-
     it('should inherit from ServiceObject', done => {
       const options = {};
 

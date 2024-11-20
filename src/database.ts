@@ -243,6 +243,17 @@ export type CreateSessionResponse = [
   spannerClient.spanner.v1.ISession,
 ];
 
+import {
+  MultiplexedSessionInterface,
+  MultiplexedSessionOptions,
+} from './multiplexed-session';
+
+import { GetSession, GetSessionInterface } from './get-session';
+
+export interface MultiplexedSessionConstructor {
+  new (database: Database): MultiplexedSessionInterface;
+}
+
 export interface CreateSessionOptions {
   labels?: {[k: string]: string} | null;
   databaseRole?: string | null;
@@ -338,7 +349,8 @@ export interface RestoreOptions {
 class Database extends common.GrpcServiceObject {
   private instance: Instance;
   formattedName_: string;
-  pool_: SessionPoolInterface;
+  // pool_: SessionPoolInterface;
+  sessionFactory_: GetSessionInterface;
   queryOptions_?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions;
   resourceHeader_: {[k: string]: string};
   request: DatabaseRequest;
@@ -352,7 +364,8 @@ class Database extends common.GrpcServiceObject {
     instance: Instance,
     name: string,
     poolOptions?: SessionPoolConstructor | SessionPoolOptions,
-    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions
+    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions,
+    multiplexedSessionOptions?: MultiplexedSessionOptions | MultiplexedSessionConstructor
   ) {
     const methods = {
       /**
@@ -449,15 +462,6 @@ class Database extends common.GrpcServiceObject {
       },
     } as {} as ServiceObjectConfig);
 
-    this.pool_ =
-      typeof poolOptions === 'function'
-        ? new (poolOptions as SessionPoolConstructor)(this, null)
-        : new SessionPool(this, poolOptions);
-    const sessionPoolInstance = this.pool_ as SessionPool;
-    if (sessionPoolInstance) {
-      sessionPoolInstance._observabilityOptions =
-        instance._observabilityOptions;
-    }
     if (typeof poolOptions === 'object') {
       this.databaseRole = poolOptions.databaseRole || null;
     }
@@ -473,11 +477,17 @@ class Database extends common.GrpcServiceObject {
       [CLOUD_RESOURCE_HEADER]: this.formattedName_,
     };
     this.request = instance.request;
-    this._observabilityOptions = instance._observabilityOptions;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.requestStream = instance.requestStream as any;
-    this.pool_.on('error', this.emit.bind(this, 'error'));
-    this.pool_.open();
+
+    this.sessionFactory_ = new GetSession(this, name, poolOptions, multiplexedSessionOptions);
+    this.pool_ = this.sessionFactory_.getPool();
+    this.multiplexedSession_ = this.sessionFactory_.getMultiplexedSession();
+    const sessionPoolInstance = this.pool_ as SessionPool;
+    if (sessionPoolInstance) {
+      sessionPoolInstance._observabilityOptions =
+        instance._observabilityOptions;
+    }
     this.queryOptions_ = Object.assign(
       Object.assign({}, queryOptions),
       Database.getEnvironmentQueryOptions()
@@ -1129,16 +1139,18 @@ class Database extends common.GrpcServiceObject {
    * @returns {Transaction}
    */
   private _releaseOnEnd(session: Session, transaction: Snapshot, span: Span) {
-    transaction.once('end', () => {
-      try {
-        this.pool_.release(session);
-      } catch (e) {
-        setSpanErrorAndException(span, e as Error);
-        this.emit('error', e);
-      } finally {
-        span.end();
-      }
-    });
+    if(process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS!=='true') {
+      transaction.once('end', () => {
+        try {
+          this.pool_.release(session);
+        } catch (e) {
+          setSpanErrorAndException(span, e as Error);
+          this.emit('error', e);
+        } finally {
+          span.end();
+        }
+      });
+    }
   }
   /**
    * @typedef {array} DatabaseDeleteResponse
@@ -3047,7 +3059,8 @@ class Database extends common.GrpcServiceObject {
       ...this._traceConfig,
     };
     return startTrace('Database.runStream', traceConfig, span => {
-      this.pool_.getSession((err, session) => {
+      this.sessionFactory_.getSession((err, session) => {
+        console.log("session: ", session?.formattedName_);
         if (err) {
           setSpanError(span, err);
           proxyStream.destroy(err);
