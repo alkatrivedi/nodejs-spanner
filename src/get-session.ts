@@ -1,7 +1,7 @@
 import { Database, Session, Transaction } from ".";
-import { MultiplexedSession, MultiplexedSessionInterface, MultiplexedSessionOptions } from "./multiplexed-session";
+import { MultiplexedSession, MultiplexedSessionInterface } from "./multiplexed-session";
 import { SessionPool, SessionPoolInterface, SessionPoolOptions } from "./session-pool";
-import { MultiplexedSessionConstructor, SessionPoolConstructor } from "./database";
+import { SessionPoolConstructor } from "./database";
 import { ServiceObjectConfig } from "@google-cloud/common";
 const common = require('./common-grpc/service-object');
 
@@ -32,7 +32,6 @@ export class GetSession extends common.GrpcServiceObject implements GetSessionIn
         database: Database,
         name: String,
         poolOptions?: SessionPoolConstructor | SessionPoolOptions,
-        multiplexedSessionOptions?: MultiplexedSessionOptions | MultiplexedSessionConstructor
     ) {
         super({
             parent: database,
@@ -42,19 +41,22 @@ export class GetSession extends common.GrpcServiceObject implements GetSessionIn
             typeof poolOptions === 'function'
                 ? new (poolOptions as SessionPoolConstructor)(database, null)
                 : new SessionPool(database, poolOptions);
-        this.multiplexedSession_ =
-            typeof multiplexedSessionOptions === 'function'
-                ? new (multiplexedSessionOptions as MultiplexedSessionConstructor)(database)
-                : new MultiplexedSession(database, multiplexedSessionOptions);
+        this.multiplexedSession_ = new MultiplexedSession(database);
         this.pool_.on('error', this.emit.bind(this, 'error'));
         this.pool_.open();
         this.multiplexedSession_.createSession();
     }
 
-    getSession(callback: GetSessionCallback): void{
+    getSession(callback: GetSessionCallback): void {
         if(process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS==='true') {
             this.multiplexedSession_?.getSession((err, session) => {
-                err ? callback(err, null) : callback(null, session);
+                if(err) {
+                    // fallback to regular session
+                    process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'false';
+                    this.getSession(callback);
+                } else {
+                    callback(null, session);
+                }
             });
         } else {
             this.pool_?.getSession((err, session) => {

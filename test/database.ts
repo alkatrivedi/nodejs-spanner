@@ -78,7 +78,7 @@ class FakeBatchTransaction {
   }
 }
 
-class FakeGrpcServiceObject extends EventEmitter {
+export class FakeGrpcServiceObject extends EventEmitter {
   calledWith_: IArguments;
   constructor() {
     super();
@@ -109,7 +109,7 @@ class FakeSession {
   }
 }
 
-class FakeSessionPool extends EventEmitter {
+export class FakeSessionPool extends EventEmitter {
   calledWith_: IArguments;
   constructor() {
     super();
@@ -2057,6 +2057,7 @@ describe('Database', () => {
           database: database.formattedName_,
           session: {
             creatorRole: database.databaseRole,
+            labels: null,
           },
         });
         assert.strictEqual(config.gaxOpts, gaxOptions);
@@ -2080,6 +2081,7 @@ describe('Database', () => {
           database: database.formattedName_,
           session: {
             creatorRole: database.databaseRole,
+            labels: null,
           },
         });
 

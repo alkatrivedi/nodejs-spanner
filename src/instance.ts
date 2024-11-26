@@ -21,8 +21,7 @@ const common = require('./common-grpc/service-object');
 import {promisifyAll} from '@google-cloud/promisify';
 import * as extend from 'extend';
 import snakeCase = require('lodash.snakecase');
-import {Database, MultiplexedSessionConstructor, SessionPoolConstructor} from './database';
-import { MultiplexedSessionOptions } from './multiplexed-session';
+import {Database, SessionPoolConstructor} from './database';
 import {Spanner, RequestConfig} from '.';
 import {
   RequestCallback,
@@ -961,8 +960,7 @@ class Instance extends common.GrpcServiceObject {
   database(
     name: string,
     poolOptions?: SessionPoolOptions | SessionPoolConstructor,
-    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions,
-    multiplexedSessionOptions?: MultiplexedSessionOptions | MultiplexedSessionConstructor
+    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions
   ): Database {
     if (!name) {
       throw new GoogleError('A name is required to access a Database object.');
@@ -977,13 +975,9 @@ class Instance extends common.GrpcServiceObject {
       optionsKey =
         optionsKey + '/' + JSON.stringify(Object.entries(queryOptions!).sort());
     }
-    if (multiplexedSessionOptions && Object.keys(multiplexedSessionOptions).length > 0) {
-      optionsKey =
-        optionsKey + '/' + JSON.stringify(Object.entries(multiplexedSessionOptions!).sort());
-    }
     const key = name.split('/').pop() + optionsKey;
     if (!this.databases_.has(key!)) {
-      const db = new Database(this, name, poolOptions, queryOptions, multiplexedSessionOptions);
+      const db = new Database(this, name, poolOptions, queryOptions);
       db._observabilityOptions = this._observabilityOptions;
       this.databases_.set(key!, db);
     }

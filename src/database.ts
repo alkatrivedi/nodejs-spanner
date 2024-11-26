@@ -243,16 +243,7 @@ export type CreateSessionResponse = [
   spannerClient.spanner.v1.ISession,
 ];
 
-import {
-  MultiplexedSessionInterface,
-  MultiplexedSessionOptions,
-} from './multiplexed-session';
-
 import { GetSession, GetSessionInterface } from './get-session';
-
-export interface MultiplexedSessionConstructor {
-  new (database: Database): MultiplexedSessionInterface;
-}
 
 export interface CreateSessionOptions {
   labels?: {[k: string]: string} | null;
@@ -349,12 +340,12 @@ export interface RestoreOptions {
 class Database extends common.GrpcServiceObject {
   private instance: Instance;
   formattedName_: string;
-  // pool_: SessionPoolInterface;
   sessionFactory_: GetSessionInterface;
   queryOptions_?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions;
   resourceHeader_: {[k: string]: string};
   request: DatabaseRequest;
   databaseRole?: string | null;
+  labels?: {[k: string]: string} | null;
   databaseDialect?: EnumKey<
     typeof databaseAdmin.spanner.admin.database.v1.DatabaseDialect
   > | null;
@@ -364,8 +355,7 @@ class Database extends common.GrpcServiceObject {
     instance: Instance,
     name: string,
     poolOptions?: SessionPoolConstructor | SessionPoolOptions,
-    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions,
-    multiplexedSessionOptions?: MultiplexedSessionOptions | MultiplexedSessionConstructor
+    queryOptions?: spannerClient.spanner.v1.ExecuteSqlRequest.IQueryOptions
   ) {
     const methods = {
       /**
@@ -464,6 +454,7 @@ class Database extends common.GrpcServiceObject {
 
     if (typeof poolOptions === 'object') {
       this.databaseRole = poolOptions.databaseRole || null;
+      this.labels = poolOptions.labels || null;
     }
     this.formattedName_ = formattedName_;
     this.instance = instance;
@@ -480,7 +471,7 @@ class Database extends common.GrpcServiceObject {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.requestStream = instance.requestStream as any;
 
-    this.sessionFactory_ = new GetSession(this, name, poolOptions, multiplexedSessionOptions);
+    this.sessionFactory_ = new GetSession(this, name, poolOptions);
     this.pool_ = this.sessionFactory_.getPool();
     this.multiplexedSession_ = this.sessionFactory_.getMultiplexedSession();
     const sessionPoolInstance = this.pool_ as SessionPool;
@@ -988,9 +979,7 @@ class Database extends common.GrpcServiceObject {
 
     reqOpts.session = {};
 
-    if (options.labels) {
-      reqOpts.session.labels = options.labels;
-    }
+    reqOpts.session.labels = options.labels || this.labels || null;
 
     if (options.multiplexed) {
       reqOpts.session.multiplexed = options.multiplexed;
@@ -1004,24 +993,29 @@ class Database extends common.GrpcServiceObject {
       addLeaderAwareRoutingHeader(headers);
     }
 
-    this.request<google.spanner.v1.ISession>(
-      {
-        client: 'SpannerClient',
-        method: 'createSession',
-        reqOpts,
-        gaxOpts: options.gaxOptions,
-        headers: headers,
-      },
-      (err, resp) => {
-        if (err) {
-          callback(err, null, resp!);
-          return;
+    startTrace('Database.createSession', this._traceConfig, span => {
+      this.request<google.spanner.v1.ISession>(
+        {
+          client: 'SpannerClient',
+          method: 'createSession',
+          reqOpts,
+          gaxOpts: options.gaxOptions,
+          headers: headers,
+        },
+        (err, resp) => {
+          if (err) {
+            setSpanError(span, err);
+            span.end();
+            callback(err, null, resp!);
+            return;
+          }
+          const session = this.session(resp!.name!);
+          session.metadata = resp;
+          span.end();
+          callback(null, session, resp!);
         }
-        const session = this.session(resp!.name!);
-        session.metadata = resp;
-        callback(null, session, resp!);
-      }
-    );
+      );
+    });
   }
   /**
    * @typedef {array} CreateTableResponse
@@ -3060,7 +3054,7 @@ class Database extends common.GrpcServiceObject {
     };
     return startTrace('Database.runStream', traceConfig, span => {
       this.sessionFactory_.getSession((err, session) => {
-        console.log("session: ", session?.formattedName_);
+        // console.log("session: ", session?.formattedName_);
         if (err) {
           setSpanError(span, err);
           proxyStream.destroy(err);
