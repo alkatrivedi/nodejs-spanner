@@ -44,7 +44,9 @@ export class GetSession extends common.GrpcServiceObject implements GetSessionIn
         this.multiplexedSession_ = new MultiplexedSession(database);
         this.pool_.on('error', this.emit.bind(this, 'error'));
         this.pool_.open();
-        this.multiplexedSession_.createSession();
+        // handle the error here .on event
+        // should get only when environment variable is enabled
+        // this.multiplexedSession_.createSession();
     }
 
     getSession(callback: GetSessionCallback): void {

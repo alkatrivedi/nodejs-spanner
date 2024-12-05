@@ -31,8 +31,10 @@ import {
   setSpanError,
   startTrace,
 } from './instrument';
+import { GoogleError } from 'google-gax';
 
 export const MUX_SESSION_AVAILABLE = 'mux-session-available';
+export const MUX_SESSION_CREATE_ERROR = 'mux-session-create-error';
 
 /**
  * Interface for implementing multiplexed session logic, it should extend the
@@ -78,7 +80,6 @@ export class MultiplexedSession
   // frequency to create new mux session
   refreshRate: number;
   _multiplexedSession: Session | null;
-  _pingHandle!: NodeJS.Timer;
   _refreshHandle!: NodeJS.Timer;
   _observabilityOptions?: ObservabilityOptions;
   constructor(database: Database) {
@@ -87,6 +88,7 @@ export class MultiplexedSession
     // default frequency is 7 days
     this.refreshRate = 7;
     this._multiplexedSession = null;
+    this._observabilityOptions = database._observabilityOptions;
   }
 
   /**
@@ -100,15 +102,6 @@ export class MultiplexedSession
         this._maintain();
       })
       .catch(err => {
-        if (
-          isDatabaseNotFoundError(err) ||
-          isInstanceNotFoundError(err) ||
-          isCreateSessionPermissionError(err) ||
-          isDefaultCredentialsNotSetError(err) ||
-          isProjectIdNotSetInEnvironmentError(err)
-        ) {
-          return;
-        }
         this.emit('error', err);
       });
   }
@@ -147,7 +140,8 @@ export class MultiplexedSession
           this.emit(MUX_SESSION_AVAILABLE);
         } catch (e) {
           setSpanError(span, e as Error);
-          this.emit('error', e);
+          this.emit(MUX_SESSION_CREATE_ERROR, e);
+          throw e;
         } finally {
           span.end();
         }
@@ -161,6 +155,7 @@ export class MultiplexedSession
    * This method sets up a periodic refresh interval for maintaining the session. The interval duration
    * is determined by the @param refreshRate option, which is provided in days.
    * The default value is 7 days.
+   * @throws {Error} In case the multiplexed session creation will get fail, and an error occurs within `_createSession`, it is caught and ignored.
    *
    * @returns {void} This method does not return any value.
    *
@@ -234,19 +229,30 @@ export class MultiplexedSession
     // Define event and promises to wait for the session to become available
     span.addEvent('Waiting for a multiplexed session to become available');
     let removeListener: Function;
-    const promise = new Promise(resolve => {
-      this.once(MUX_SESSION_AVAILABLE, resolve);
-      removeListener = this.removeListener.bind(
-        this,
-        MUX_SESSION_AVAILABLE,
-        resolve
-      );
-    });
+    let removeErrorListener: Function;
+    const promises = [
+      new Promise((_, reject) => {
+        const errorListener = () => reject(
+          new GoogleError(MUX_SESSION_CREATE_ERROR)
+        );
+        this.once(MUX_SESSION_CREATE_ERROR, errorListener);
+        removeErrorListener = this.removeListener.bind(this, MUX_SESSION_CREATE_ERROR, reject);
+      }),
+      new Promise(resolve => {
+        this.once(MUX_SESSION_AVAILABLE, resolve);
+        removeListener = this.removeListener.bind(
+          this,
+          MUX_SESSION_AVAILABLE,
+          resolve
+        );
+      }),
+    ];
 
     try {
-      await promise;
+      await Promise.race(promises);
     } finally {
       removeListener!();
+      removeErrorListener!();
     }
     // Return the multiplexed session after it becomes available
     return this._multiplexedSession;

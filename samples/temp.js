@@ -1,19 +1,15 @@
 'use strict';
 
 async function main(
-  instanceId = 'my-instance',
-  databaseId = 'my-database',
-  projectId = 'my-project-id'
 ) {
   const {Spanner} = require('../build/src');
   const spanner = new Spanner({
-    projectId: projectId,
+    projectId: 'span-cloud-testing',
   });
-  const instance = spanner.instance(instanceId);
-  const database = instance.database(databaseId);
-  const queries = [{sql: 'SELECT 1'}, {sql: 'SELECT 2'}, {sql: 'SELECT 3'}];
-  async function runQueriesConcurrently() {
-    // await database.run('SELECT 1');
+  const instance = spanner.instance('alka-testing');
+  try {
+    const database = instance.database('abc');
+    const queries = [{sql: 'SELECT 1'}, {sql: 'SELECT 2'}, {sql: 'SELECT 3'}];
     const promises = queries.map(async query => {
       const [rows] = await database.run(query);
       console.log(`Query: ${query.sql} returned ${rows.length} rows.`);
@@ -21,8 +17,10 @@ async function main(
     });
 
     await Promise.all(promises);
+    
+  } catch(e) {
+    console.log(e);
   }
-  runQueriesConcurrently();
 }
 
 process.on('unhandledRejection', err => {
