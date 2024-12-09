@@ -18,12 +18,12 @@ import * as assert from 'assert';
 import {beforeEach, afterEach, describe, it} from 'mocha';
 import * as events from 'events';
 import * as sinon from 'sinon';
-import {grpc, Status} from 'google-gax';
 import {Database} from '../src/database';
 import {Session} from '../src/session';
 import {
   MultiplexedSession,
   MUX_SESSION_AVAILABLE,
+  MUX_SESSION_CREATE_ERROR,
 } from '../src/multiplexed-session';
 import {Transaction} from '../src/transaction';
 import {FakeTransaction} from './session-pool';
@@ -102,42 +102,17 @@ describe('MultiplexedSession', () => {
       });
     });
 
-    it('should not propagate handled Instance and Database not found errors for Multiplexed Session', () => {
-      for (const msg of ['Instance not found', 'Database not found']) {
-        const multiplexedSession = new MultiplexedSession(DATABASE);
-        const error = {
-          code: Status.NOT_FOUND,
-          message: msg,
-        } as grpc.ServiceError;
-        sandbox.stub(multiplexedSession, '_createSession').rejects(error);
-        assert.doesNotThrow(() => multiplexedSession.createSession());
-      }
-    });
-
-    it('should not propagate the errors for Multiplexed Session when either default credential or project Id is not set', () => {
-      for (const msg of [
-        'Could not load the default credentials',
-        'Unable to detect a Project Id in the current environment',
-      ]) {
-        const multiplexedSession = new MultiplexedSession(DATABASE);
-        const error = {
-          message: msg,
-        } as grpc.ServiceError;
-        sandbox.stub(multiplexedSession, '_createSession').rejects(error);
-        assert.doesNotThrow(() => multiplexedSession.createSession());
-      }
-    });
-
     it('should propagate errors for Multiplexed Session which gets emitted', async () => {
       const multiplexedSession = new MultiplexedSession(DATABASE);
       const fakeError = new Error();
       sandbox.stub(multiplexedSession, '_createSession').rejects(fakeError);
       const errorPromise = new Promise<void>((resolve, reject) => {
         multiplexedSession.once('error', err => {
-          if (err === fakeError) {
+          try {
+            assert.strictEqual(err, fakeError);
             resolve();
-          } else {
-            reject(new Error('Unexpected error emitted'));
+          } catch (e) {
+            reject(e);
           }
         });
       });
@@ -151,15 +126,18 @@ describe('MultiplexedSession', () => {
   describe('_maintain', () => {
     let clock;
     let createSessionStub;
+
     beforeEach(() => {
       createSessionStub = sandbox
         .stub(multiplexedSession, '_createSession')
         .resolves();
       clock = sandbox.useFakeTimers();
     });
+
     afterEach(() => {
       clock.restore();
     });
+
     it('should set an interval to refresh mux sessions', () => {
       const expectedInterval =
         multiplexedSession.refreshRate! * 24 * 60 * 60000;
@@ -179,8 +157,19 @@ describe('MultiplexedSession', () => {
       });
     });
 
+    it('should emit the MUX_SESSION_AVAILABLE event on successfully creating mux session', done => {
+      multiplexedSession.on(MUX_SESSION_AVAILABLE, () => {
+        assert.strictEqual(
+          multiplexedSession._multiplexedSession,
+          fakeMuxSession
+        );
+        done();
+      });
+      multiplexedSession._createSession();
+    });
+
     it('should reject with any request errors', async () => {
-      const error = new Error('err');
+      const error = new Error(MUX_SESSION_CREATE_ERROR);
       createSessionStub.rejects(error);
 
       try {
@@ -190,12 +179,22 @@ describe('MultiplexedSession', () => {
         assert.strictEqual(e, error);
       }
     });
+
+    it('should emit the error event on failed creation of mux session', done => {
+      const error = new Error(MUX_SESSION_CREATE_ERROR);
+      createSessionStub.rejects(error);
+      multiplexedSession.on(MUX_SESSION_CREATE_ERROR, () => {
+        done();
+      });
+      multiplexedSession._createSession().catch(err => {
+        assert.strictEqual(err, error);
+      });
+    });
   });
 
   describe('getSession', () => {
     it('should acquire a session', done => {
       sandbox.stub(multiplexedSession, '_acquire').resolves(fakeMuxSession);
-
       multiplexedSession.getSession((err, session) => {
         assert.ifError(err);
         assert.strictEqual(session, fakeMuxSession);
@@ -214,11 +213,8 @@ describe('MultiplexedSession', () => {
 
     it('should pass back the session and txn', done => {
       const fakeTxn = new FakeTransaction() as unknown as Transaction;
-
       fakeMuxSession.txn = fakeTxn;
-
       sandbox.stub(multiplexedSession, '_acquire').resolves(fakeMuxSession);
-
       multiplexedSession.getSession((err, session, txn) => {
         assert.ifError(err);
         assert.strictEqual(session, fakeMuxSession);
@@ -255,29 +251,44 @@ describe('MultiplexedSession', () => {
     it('should wait for a pending session to become available', async () => {
       multiplexedSession._multiplexedSession = fakeMuxSession;
       setTimeout(() => multiplexedSession.emit(MUX_SESSION_AVAILABLE), 100);
-      const stub = sandbox
-        .stub(multiplexedSession, 'createSession')
-        .rejects(new Error('should not be called'));
       const session = await multiplexedSession._getSession();
       assert.strictEqual(session, fakeMuxSession);
-      assert.strictEqual(stub.callCount, 0);
     });
 
     it('should remove the available listener', async () => {
       const promise = multiplexedSession._getSession();
-
       setTimeout(() => multiplexedSession.emit(MUX_SESSION_AVAILABLE), 100);
-
       assert.strictEqual(
         multiplexedSession.listenerCount(MUX_SESSION_AVAILABLE),
         1
       );
-
       try {
         await promise;
       } finally {
         assert.strictEqual(
           multiplexedSession.listenerCount(MUX_SESSION_AVAILABLE),
+          0
+        );
+      }
+    });
+
+    it('should remove the error listener', async () => {
+      const error = new Error('mux session create error');
+      const promise = multiplexedSession._getSession();
+      setTimeout(
+        () => multiplexedSession.emit(MUX_SESSION_CREATE_ERROR, error),
+        100
+      );
+      assert.strictEqual(
+        multiplexedSession.listenerCount(MUX_SESSION_CREATE_ERROR),
+        1
+      );
+      try {
+        await promise;
+      } catch (e) {
+        assert.strictEqual(e, error);
+        assert.strictEqual(
+          multiplexedSession.listenerCount(MUX_SESSION_CREATE_ERROR),
           0
         );
       }

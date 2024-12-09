@@ -3054,7 +3054,7 @@ class Database extends common.GrpcServiceObject {
     };
     return startTrace('Database.runStream', traceConfig, span => {
       this.sessionFactory_.getSession((err, session) => {
-        // console.log("session: ", session?.formattedName_);
+        console.log("session: ", session?.formattedName_);
         if (err) {
           setSpanError(span, err);
           proxyStream.destroy(err);

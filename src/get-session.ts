@@ -46,19 +46,13 @@ export class GetSession extends common.GrpcServiceObject implements GetSessionIn
         this.pool_.open();
         // handle the error here .on event
         // should get only when environment variable is enabled
-        // this.multiplexedSession_.createSession();
+        this.multiplexedSession_.createSession();
     }
 
     getSession(callback: GetSessionCallback): void {
         if(process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS==='true') {
             this.multiplexedSession_?.getSession((err, session) => {
-                if(err) {
-                    // fallback to regular session
-                    process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'false';
-                    this.getSession(callback);
-                } else {
-                    callback(null, session);
-                }
+                err ? callback(err, null) : callback(null, session);
             });
         } else {
             this.pool_?.getSession((err, session) => {

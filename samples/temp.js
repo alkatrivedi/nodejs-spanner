@@ -8,7 +8,7 @@ async function main(
   });
   const instance = spanner.instance('alka-testing');
   try {
-    const database = instance.database('abc');
+    const database = instance.database('db-1');
     const queries = [{sql: 'SELECT 1'}, {sql: 'SELECT 2'}, {sql: 'SELECT 3'}];
     const promises = queries.map(async query => {
       const [rows] = await database.run(query);
