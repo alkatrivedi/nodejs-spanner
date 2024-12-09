@@ -26,6 +26,7 @@ import { FakeSessionPool } from '../test/database';
 import { FakeGrpcServiceObject } from '../test/database';
 import { MultiplexedSession } from '../src/multiplexed-session';
 import { GetSessionCallback } from '../src/get-session';
+import { FakeTransaction } from './session-pool';
 
 class FakeMultiplexedSession extends EventEmitter {
     calledWith_: IArguments;
@@ -45,8 +46,9 @@ describe.only('GetSession', () => {
 
     const NAME = 'table-name';
     const POOL_OPTIONS = {};
-
+    function noop() {}
     const DATABASE = {
+        createSession: noop,
         databaseRole: 'parent_role',
     } as unknown as Database;
 
@@ -119,42 +121,57 @@ describe.only('GetSession', () => {
 
     describe.only('getSession', ()=>{
 
-        let multiplexedSession;
-        let sessionPool: sp.SessionPool;
-        let sandbox: sinon.SinonSandbox;
-        sandbox = sinon.createSandbox();
+        // let multiplexedSession;
+        // let fakeMuxSession;
+        // let sessionPool: sp.SessionPool;
+        // // let sandbox: sinon.SinonSandbox;
+        // let createSessionStub;
+        // // sandbox = sinon.createSandbox();
 
-        before(() => {
+        // const createSession = (name = 'id', props?): Session => {
+        //   props = props || {multiplexed: true};
+      
+        //   return Object.assign(new Session(DATABASE, name), props, {
+        //     create: sandbox.stub().resolves(),
+        //     transaction: sandbox.stub().returns(new FakeTransaction()),
+        //   });
+        // };
 
-            sandbox = sinon.createSandbox();
-            // type GetSessionCallback = (err: Error | null, session: Session | null, transaction: Transaction | null) => void;
-            process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'true';
-            multiplexedSession = new MultiplexedSession(DATABASE);
-            sessionPool = new SessionPool(DATABASE);
-            
-        });
+    //     // before(() => {
+    //     //     fakeMuxSession = createSession();
+    //     //     // type GetSessionCallback = (err: Error | null, session: Session | null, transaction: Transaction | null) => void;
+    //     //     process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'true';
+    //     //     multiplexedSession = new MultiplexedSession(DATABASE);
+    //     //     sessionPool = new SessionPool(DATABASE);
+    //     //     sandbox.stub(multiplexedSession, 'getSession').callsFake((callback: any) => {
+    //     //       callback(null, fakeMuxSession); 
+    //     //     });
+    //     //     createSessionStub = sandbox
+    //     //     .stub(DATABASE, 'createSession')
+    //     //     .withArgs({multiplexed: true})
+    //     //     .callsFake(() => {
+    //     //       return Promise.resolve([fakeMuxSession]);
+    //     //     });
+    //     // });
 
-        afterEach(() => {
-            process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'false';
-        });
+    //     // afterEach(() => {
+    //     //     process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS = 'false';
+    //     //     sandbox.restore();
+    //     // });
 
-        it('should return the multiplexed session if GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS env is enabled', () => {
+        it('should return the multiplexed session if GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS env is enabled', async () => {
             assert.strictEqual(process.env.GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS, 'true');
-            // assert(multiplexedSession instanceof Session); 
-            sandbox.stub(multiplexedSession, 'getSession').callsFake((callback: any) => {
-                callback(null, multiplexedSession as Session); 
-            });
             getSession.getSession((err, resp) => {
                 console.log(resp);
             });
         });
 
-        // it('should return the multiplexed session if GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS env is enabled', () => {
-        //     assert(multiplexedSession instanceof Session); 
-        //     sandbox.stub(sessionPool, 'getSession').callsFake((callback: GetSessionCallback) => {
-        //         callback(null, fakeSession); 
-        //     });
-        // });
+    //     // it('should return the multiplexed session if GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS env is enabled', () => {
+    //     //     assert(multiplexedSession instanceof Session); 
+    //     //     sandbox.stub(sessionPool, 'getSession').callsFake((callback: GetSessionCallback) => {
+    //     //         callback(null, fakeSession); 
+    //     //     });
+    //     // });
 
     });
 });

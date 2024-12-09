@@ -89,6 +89,7 @@ export class MultiplexedSession
     this.refreshRate = 7;
     this._multiplexedSession = null;
     this._observabilityOptions = database._observabilityOptions;
+    this._observabilityOptions = database._observabilityOptions;
   }
 
   /**
@@ -250,8 +251,10 @@ export class MultiplexedSession
 
     try {
       await Promise.race(promises);
+      await Promise.race(promises);
     } finally {
       removeListener!();
+      removeErrorListener!();
       removeErrorListener!();
     }
     // Return the multiplexed session after it becomes available
