@@ -39,7 +39,7 @@ function FakePQueue(options) {
 
 FakePQueue.default = FakePQueue;
 
-export class FakeTransaction {
+class FakeTransaction {
   options;
   constructor(options?) {
     this.options = options;
